@@ -1,28 +1,35 @@
 package eu.faircode.netguard;
 
+import android.content.Context;
 import android.util.Log;
 
 import java.io.BufferedReader;
+import java.io.BufferedWriter;
+import java.io.HashMap;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
-import java.net.HttpURLConnection;
+import java.io.OutputStreamWriter;
+import java.io.PrintWriter;
+import java.net.InetAddress;
+import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.URL;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class HttpProxyServer {
-    private static final String TAG = "NetGuard.ProxyServer";
+    private static final String TAG = "NetGuard.HttpProxy";
     private static final int PROXY_PORT = 8888;
-    private static final String PROXY_HOST = "192.168.49.1";
 
-    private ServerSocket serverSocket;
-    private ExecutorService executor;
-    private boolean isRunning = false;
+    private Context context;
     private ProxyListener listener;
+    private ServerSocket serverSocket;
+    private boolean isRunning = false;
+    private Thread serverThread;
+    private Map<String, ClientSession> clientSessions;
 
     public interface ProxyListener {
         void onClientConnected(String clientAddress);
@@ -30,33 +37,37 @@ public class HttpProxyServer {
         void onDataTransferred(String clientAddress, long bytes);
     }
 
-    public HttpProxyServer(ProxyListener listener) {
+    private static class ClientSession {
+        final String clientAddress;
+        final long startTime;
+        long bytesTransferred;
+
+        ClientSession(String clientAddress) {
+            this.clientAddress = clientAddress;
+            this.startTime = System.currentTimeMillis();
+            this.bytesTransferred = 0;
+        }
+    }
+
+    public HttpProxyServer(Context context) {
+        this.context = context;
+        this.clientSessions = new ConcurrentHashMap<>();
+    }
+
+    public void setListener(ProxyListener listener) {
         this.listener = listener;
-        this.executor = Executors.newCachedThreadPool();
     }
 
     public void start() {
         if (isRunning) {
-            Log.w(TAG, "Proxy server already running");
             return;
         }
 
-        executor.execute(() -> {
-            try {
-                serverSocket = new ServerSocket(PROXY_PORT);
-                isRunning = true;
-                Log.i(TAG, "Proxy server started on " + PROXY_HOST + ":" + PROXY_PORT);
+        Log.i(TAG, "Starting HTTP proxy server on port " + PROXY_PORT);
 
-                while (isRunning && !serverSocket.isClosed()) {
-                    Socket clientSocket = serverSocket.accept();
-                    executor.execute(new ProxyClientHandler(clientSocket));
-                }
-            } catch (IOException e) {
-                if (isRunning) {
-                    Log.e(TAG, "Proxy server error: " + e.getMessage());
-                }
-            }
-        });
+        serverThread = new Thread(this::runServer);
+        serverThread.start();
+        isRunning = true;
     }
 
     public void stop() {
@@ -64,6 +75,7 @@ public class HttpProxyServer {
             return;
         }
 
+        Log.i(TAG, "Stopping HTTP proxy server");
         isRunning = false;
 
         try {
@@ -71,209 +83,185 @@ public class HttpProxyServer {
                 serverSocket.close();
             }
         } catch (IOException e) {
-            Log.e(TAG, "Error stopping proxy server: " + e.getMessage());
+            Log.e(TAG, "Error closing server socket", e);
         }
 
-        executor.shutdown();
-        Log.i(TAG, "Proxy server stopped");
-    }
-
-    public boolean isRunning() {
-        return isRunning;
-    }
-
-    public String getProxyUrl() {
-        return "http://" + PROXY_HOST + ":" + PROXY_PORT;
-    }
-
-    private class ProxyClientHandler implements Runnable {
-        private Socket clientSocket;
-        private String clientAddress;
-
-        public ProxyClientHandler(Socket clientSocket) {
-            this.clientSocket = clientSocket;
-            this.clientAddress = clientSocket.getRemoteSocketAddress().toString();
+        if (serverThread != null) {
+            serverThread.interrupt();
         }
 
-        @Override
-        public void run() {
-            try {
-                Log.d(TAG, "Client connected: " + clientAddress);
-                if (listener != null) {
-                    listener.onClientConnected(clientAddress);
+        clientSessions.clear();
+    }
+
+    private void runServer() {
+        try {
+            serverSocket = new ServerSocket(PROXY_PORT, 50, InetAddress.getByName("0.0.0.0"));
+            Log.i(TAG, "HTTP proxy server listening on port " + PROXY_PORT);
+
+            while (isRunning && !serverSocket.isClosed()) {
+                try {
+                    Socket clientSocket = serverSocket.accept();
+                    // Handle each client in a separate thread
+                    new Thread(() -> handleClientConnection(clientSocket)).start();
+                } catch (IOException e) {
+                    if (isRunning) {
+                        Log.e(TAG, "Error accepting client connection", e);
+                    }
                 }
+            }
+        } catch (IOException e) {
+            Log.e(TAG, "Error starting HTTP proxy server", e);
+        }
+    }
 
-                BufferedReader reader = new BufferedReader(new InputStreamReader(clientSocket.getInputStream()));
-                OutputStream clientOutput = clientSocket.getOutputStream();
+    private void handleClientConnection(Socket clientSocket) {
+        String clientAddress = clientSocket.getRemoteSocketAddress().toString();
+        ClientSession session = new ClientSession(clientAddress);
+        clientSessions.put(clientAddress, session);
 
-                String requestLine = reader.readLine();
-                if (requestLine == null) {
-                    return;
-                }
+        Log.d(TAG, "External device connected: " + clientAddress);
 
-                Log.d(TAG, "Request: " + requestLine);
+        if (listener != null) {
+            listener.onClientConnected(clientAddress);
+        }
+
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(clientSocket.getInputStream()));
+             BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(clientSocket.getOutputStream()))) {
+
+            String requestLine = reader.readLine();
+            if (requestLine != null) {
+                Log.d(TAG, "HTTP Request from external device: " + requestLine);
 
                 // Parse HTTP request
                 String[] parts = requestLine.split(" ");
-                if (parts.length < 3) {
-                    sendErrorResponse(clientOutput, 400, "Bad Request");
-                    return;
-                }
+                if (parts.length >= 3) {
+                    String method = parts[0];
+                    String url = parts[1];
+                    String version = parts[2];
 
-                String method = parts[0];
-                String url = parts[1];
-                String httpVersion = parts[2];
-
-                // Handle CONNECT method for HTTPS
-                if ("CONNECT".equals(method)) {
-                    handleConnect(url, clientOutput, reader);
-                } else {
-                    // Handle HTTP requests
-                    handleHttpRequest(method, url, httpVersion, reader, clientOutput);
-                }
-
-            } catch (Exception e) {
-                Log.e(TAG, "Error handling client: " + e.getMessage());
-            } finally {
-                try {
-                    clientSocket.close();
-                    if (listener != null) {
-                        listener.onClientDisconnected(clientAddress);
+                    // Read headers
+                    Map<String, String> headers = new HashMap<>();
+                    String headerLine;
+                    while ((headerLine = reader.readLine()) != null && !headerLine.isEmpty()) {
+                        int colonIndex = headerLine.indexOf(':');
+                        if (colonIndex > 0) {
+                            String headerName = headerLine.substring(0, colonIndex).trim();
+                            String headerValue = headerLine.substring(colonIndex + 1).trim();
+                            headers.put(headerName.toLowerCase(), headerValue);
+                        }
                     }
-                } catch (IOException e) {
-                    Log.e(TAG, "Error closing client socket: " + e.getMessage());
+
+                    // Route through NetGuard VPN
+                    handleHttpRequest(clientSocket, method, url, headers, session);
                 }
             }
-        }
-
-        private void handleConnect(String target, OutputStream clientOutput, BufferedReader reader) {
+        } catch (IOException e) {
+            Log.e(TAG, "Error handling client connection: " + clientAddress, e);
+        } finally {
             try {
-                String[] hostPort = target.split(":");
-                String host = hostPort[0];
-                int port = hostPort.length > 1 ? Integer.parseInt(hostPort[1]) : 443;
+                clientSocket.close();
+            } catch (IOException e) {
+                Log.e(TAG, "Error closing client socket", e);
+            }
 
-                // Create connection to target server
-                Socket targetSocket = new Socket(host, port);
-
-                // Send 200 Connection Established
-                clientOutput.write("HTTP/1.1 200 Connection Established\r\n\r\n".getBytes());
-                clientOutput.flush();
-
-                // Start tunneling
-                ExecutorService tunnelExecutor = Executors.newFixedThreadPool(2);
-
-                tunnelExecutor.execute(() -> {
-                    try {
-                        byte[] buffer = new byte[4096];
-                        InputStream clientInput = clientSocket.getInputStream();
-                        OutputStream targetOutput = targetSocket.getOutputStream();
-
-                        int bytesRead;
-                        while ((bytesRead = clientInput.read(buffer)) != -1) {
-                            targetOutput.write(buffer, 0, bytesRead);
-                            targetOutput.flush();
-                            if (listener != null) {
-                                listener.onDataTransferred(clientAddress, bytesRead);
-                            }
-                        }
-                    } catch (IOException e) {
-                        Log.d(TAG, "Client to target tunnel closed");
-                    }
-                });
-
-                tunnelExecutor.execute(() -> {
-                    try {
-                        byte[] buffer = new byte[4096];
-                        InputStream targetInput = targetSocket.getInputStream();
-
-                        int bytesRead;
-                        while ((bytesRead = targetInput.read(buffer)) != -1) {
-                            clientOutput.write(buffer, 0, bytesRead);
-                            clientOutput.flush();
-                            if (listener != null) {
-                                listener.onDataTransferred(clientAddress, bytesRead);
-                            }
-                        }
-                    } catch (IOException e) {
-                        Log.d(TAG, "Target to client tunnel closed");
-                    }
-                });
-
-            } catch (Exception e) {
-                Log.e(TAG, "Error in CONNECT tunnel: " + e.getMessage());
-                try {
-                    sendErrorResponse(clientOutput, 502, "Bad Gateway");
-                } catch (IOException ex) {
-                    Log.e(TAG, "Error sending error response: " + ex.getMessage());
-                }
+            clientSessions.remove(clientAddress);
+            if (listener != null) {
+                listener.onClientDisconnected(clientAddress);
             }
         }
+    }
 
-        private void handleHttpRequest(String method, String url, String httpVersion,
-                                     BufferedReader reader, OutputStream clientOutput) throws IOException {
+    private void handleHttpRequest(Socket clientSocket, String method, String url,
+                                 Map<String, String> headers, ClientSession session) {
+        try {
+            // Parse destination from URL or Host header
+            String host = headers.get("host");
+            if (host == null && url.startsWith("http")) {
+                URL parsedUrl = new URL(url);
+                host = parsedUrl.getHost();
+            }
+
+            if (host == null) {
+                sendHttpError(clientSocket, 400, "Bad Request - No host specified");
+                return;
+            }
+
+            int port = 80;
+            if (host.contains(":")) {
+                String[] hostParts = host.split(":");
+                host = hostParts[0];
+                port = Integer.parseInt(hostParts[1]);
+            }
+
+            Log.i(TAG, "Routing external device request to: " + host + ":" + port);
+
+            // Create connection that routes through NetGuard VPN
+            // This connection appears as the proxy app's UID in NetGuard's native code
+            Socket targetSocket = new Socket();
+            targetSocket.connect(new InetSocketAddress(host, port), 30000);
+
+            // Forward the request
+            PrintWriter targetWriter = new PrintWriter(targetSocket.getOutputStream(), true);
+            targetWriter.println(method + " " + url + " HTTP/1.1");
+            targetWriter.println("Host: " + host);
+
+            // Forward other headers (except connection-specific ones)
+            for (Map.Entry<String, String> header : headers.entrySet()) {
+                if (!header.getKey().equals("host") &&
+                    !header.getKey().equals("connection") &&
+                    !header.getKey().equals("proxy-connection")) {
+                    targetWriter.println(header.getKey() + ": " + header.getValue());
+                }
+            }
+            targetWriter.println("Connection: close");
+            targetWriter.println();
+
+            // Relay response back to external device
+            relayResponse(targetSocket, clientSocket, session);
+
+            targetSocket.close();
+
+        } catch (Exception e) {
+            Log.e(TAG, "Error handling HTTP request", e);
             try {
-                // Make request to target server
-                URL targetUrl = new URL(url);
-                HttpURLConnection connection = (HttpURLConnection) targetUrl.openConnection();
-                connection.setRequestMethod(method);
+                sendHttpError(clientSocket, 500, "Internal Server Error");
+            } catch (IOException ioException) {
+                Log.e(TAG, "Error sending error response", ioException);
+            }
+        }
+    }
 
-                // Copy headers from client request
-                String header;
-                while ((header = reader.readLine()) != null && !header.isEmpty()) {
-                    String[] headerParts = header.split(": ", 2);
-                    if (headerParts.length == 2) {
-                        connection.setRequestProperty(headerParts[0], headerParts[1]);
-                    }
-                }
+    private void relayResponse(Socket sourceSocket, Socket clientSocket, ClientSession session)
+            throws IOException {
+        byte[] buffer = new byte[8192];
+        int bytesRead;
 
-                // Get response
-                int responseCode = connection.getResponseCode();
-                String responseMessage = connection.getResponseMessage();
+        try (InputStream sourceInput = sourceSocket.getInputStream();
+             OutputStream clientOutput = clientSocket.getOutputStream()) {
 
-                // Send response status
-                String statusLine = httpVersion + " " + responseCode + " " + responseMessage + "\r\n";
-                clientOutput.write(statusLine.getBytes());
+            while ((bytesRead = sourceInput.read(buffer)) != -1) {
+                clientOutput.write(buffer, 0, bytesRead);
 
-                // Send response headers
-                for (String key : connection.getHeaderFields().keySet()) {
-                    if (key != null) {
-                        String value = connection.getHeaderField(key);
-                        String headerLine = key + ": " + value + "\r\n";
-                        clientOutput.write(headerLine.getBytes());
-                    }
-                }
-                clientOutput.write("\r\n".getBytes());
-
-                // Send response body
-                InputStream responseStream = connection.getInputStream();
-                byte[] buffer = new byte[4096];
-                int bytesRead;
-                long totalBytes = 0;
-                while ((bytesRead = responseStream.read(buffer)) != -1) {
-                    clientOutput.write(buffer, 0, bytesRead);
-                    totalBytes += bytesRead;
-                }
-
+                // Track data usage for external device
+                session.bytesTransferred += bytesRead;
                 if (listener != null) {
-                    listener.onDataTransferred(clientAddress, totalBytes);
+                    listener.onDataTransferred(session.clientAddress, bytesRead);
                 }
-
-                responseStream.close();
-                connection.disconnect();
-
-            } catch (Exception e) {
-                Log.e(TAG, "Error handling HTTP request: " + e.getMessage());
-                sendErrorResponse(clientOutput, 502, "Bad Gateway");
             }
         }
+    }
 
-        private void sendErrorResponse(OutputStream output, int code, String message) throws IOException {
-            String response = "HTTP/1.1 " + code + " " + message + "\r\n" +
-                            "Content-Type: text/html\r\n" +
-                            "Content-Length: 0\r\n" +
-                            "\r\n";
-            output.write(response.getBytes());
-            output.flush();
-        }
+    private void sendHttpError(Socket clientSocket, int statusCode, String message)
+            throws IOException {
+        PrintWriter writer = new PrintWriter(clientSocket.getOutputStream(), true);
+        writer.println("HTTP/1.1 " + statusCode + " " + message);
+        writer.println("Content-Type: text/html");
+        writer.println("Connection: close");
+        writer.println();
+        writer.println("<html><body><h1>" + statusCode + " " + message + "</h1></body></html>");
+    }
+
+    public String getProxyUrl() {
+        return "http://192.168.49.1:" + PROXY_PORT;
     }
 }
