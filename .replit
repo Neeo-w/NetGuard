@@ -1,0 +1,4 @@
+modules = ["java-graalvm22.3", "c-clang14", "bash"]
+
+[nix]
+channel = "stable-25_05"
