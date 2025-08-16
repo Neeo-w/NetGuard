@@ -1,36 +1,36 @@
 <?xml version="1.0" encoding="utf-8"?>
 <menu xmlns:android="http://schemas.android.com/apk/res/android"
-      xmlns:netguard="http://schemas.android.com/apk/res-auto">
+      xmlns:app="http://schemas.android.com/apk/res-auto">
     <item
         android:id="@+id/menu_search"
         android:icon="@drawable/ic_search_white_24dp"
         android:title="@string/menu_search"
-        netguard:actionViewClass="androidx.appcompat.widget.SearchView"
-        netguard:showAsAction="always|collapseActionView"/>
+        app:actionViewClass="android.widget.SearchView"
+        app:showAsAction="collapseActionView|ifRoom" />
+
     <item
         android:id="@+id/menu_filter"
         android:icon="@drawable/ic_filter_list_white_24dp"
         android:title="@string/menu_filter"
-        netguard:showAsAction="always|collapseActionView">
-        <menu>
-            <item
-                android:id="@+id/menu_app_user"
-                android:checkable="true"
-                android:title="@string/menu_app_user"/>
-            <item
-                android:id="@+id/menu_app_system"
-                android:checkable="true"
-                android:title="@string/menu_app_system"/>
-            <item
-                android:id="@+id/menu_app_nointernet"
-                android:checkable="true"
-                android:title="@string/menu_app_nointernet"/>
-            <item
-                android:id="@+id/menu_app_disabled"
-                android:checkable="true"
-                android:title="@string/menu_app_disabled"/>
-        </menu>
-    </item>
+        app:showAsAction="ifRoom" />
+
+    <item
+        android:id="@+id/menu_log"
+        android:icon="@drawable/ic_equalizer_white_24dp"
+        android:title="@string/menu_log"
+        app:showAsAction="ifRoom" />
+
+    <item
+        android:id="@+id/menu_tethering"
+        android:icon="@drawable/ic_signal_wifi_4_bar_white_24dp"
+        android:title="@string/menu_tethering"
+        app:showAsAction="ifRoom" />
+
+    <item
+        android:id="@+id/menu_settings"
+        android:icon="@drawable/ic_settings_white_24dp"
+        android:title="@string/menu_settings"
+        app:showAsAction="ifRoom" />
     <item
         android:id="@+id/menu_sort"
         android:icon="@drawable/ic_sort_white_24dp"
@@ -56,11 +56,8 @@
         android:checkable="true"
         android:title="@string/setting_malware"/>
     <item
-        android:id="@+id/menu_log"
-        android:title="@string/menu_log"/>
-    <item
-        android:id="@+id/menu_settings"
-        android:title="@string/menu_settings"/>
+        android:id="@+id/menu_apps"
+        android:title="@string/menu_apps"/>
     <item
         android:id="@+id/menu_pro"
         android:title="@string/title_pro"/>
@@ -76,7 +73,4 @@
     <item
         android:id="@+id/menu_about"
         android:title="@string/menu_about"/>
-    <item
-        android:id="@+id/menu_apps"
-        android:title="@string/menu_apps"/>
 </menu>

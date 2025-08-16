@@ -10,7 +10,7 @@ package eu.faircode.netguard;
 
     NetGuard is distributed in the hope that it will be useful,
     but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    MERCHANTABILITY OR FITNESS FOR A PARTICULAR PURPOSE.  See the
     GNU General Public License for more details.
 
     You should have received a copy of the GNU General Public License
@@ -34,7 +34,6 @@ import android.net.Uri;
 import android.net.VpnService;
 import android.os.AsyncTask;
 import android.os.Build;
-import android.os.Bundle;
 import android.provider.Settings;
 import android.text.SpannableString;
 import android.text.SpannableStringBuilder;
@@ -940,6 +939,10 @@ public class ActivityMain extends AppCompatActivity implements SharedPreferences
                         startActivity(new Intent(this, ActivityPro.class));
                 else
                     Toast.makeText(this, R.string.msg_unavailable, Toast.LENGTH_SHORT).show();
+                return true;
+
+            case R.id.menu_tethering:
+                startActivity(new Intent(this, ActivityTethering.class));
                 return true;
 
             case R.id.menu_settings:
