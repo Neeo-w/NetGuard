@@ -7,6 +7,24 @@
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+
+    <!-- Additional permissions for production tethering -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.WRITE_SETTINGS" />
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+
+    <!-- Required for nearby devices discovery (Android 12+) -->
+    <uses-permission android:name="android.permission.NEARBY_WIFI_DEVICES" 
+        android:usesPermissionFlags="neverForLocation" />
+
+    <!-- Certificate management -->
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" 
+        android:maxSdkVersion="28" />
 
     <!-- Required for Wi-Fi Direct on Android 13+ -->
     <uses-permission android:name="android.permission.NEARBY_WIFI_DEVICES" />
@@ -183,6 +201,11 @@
             android:label="@string/title_tethering"
             android:launchMode="singleTop"
             android:parentActivityName=".ActivityMain" />
+
+        <activity
+            android:name=".TetheringHelpActivity"
+            android:label="@string/menu_tethering_help"
+            android:parentActivityName=".ActivityTethering" />
 
         <service
             android:name=".ServiceSinkhole"

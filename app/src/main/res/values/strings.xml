@@ -35,7 +35,8 @@
     <string name="menu_sort_uid">Sort by uid</string>
     <string name="menu_sort_data">Sort by data usage</string>
     <string name="menu_log">Traffic log</string>
-    <string name="menu_tethering">Tethering</string>
+    <string name="menu_tethering">Wi-Fi Direct Tethering</string>
+    <string name="menu_tethering_help">Tethering Help</string>
     <string name="menu_settings">Settings</string>
 
     <!-- Tethering strings -->

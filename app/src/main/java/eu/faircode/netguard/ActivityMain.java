@@ -945,6 +945,10 @@ public class ActivityMain extends AppCompatActivity implements SharedPreferences
                 startActivity(new Intent(this, ActivityTethering.class));
                 return true;
 
+            case R.id.menu_tethering_help:
+                startActivity(new Intent(this, TetheringHelpActivity.class));
+                return true;
+
             case R.id.menu_settings:
                 startActivity(new Intent(this, ActivitySettings.class));
                 return true;
@@ -1255,7 +1259,7 @@ public class ActivityMain extends AppCompatActivity implements SharedPreferences
                     }
                 }).executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR);
             } catch (MalformedURLException ex) {
-                Toast.makeText(this, ex.toString(), Toast.LENGTH_LONG).show();
+                Toast.makeText(ActivityMain.this, ex.toString(), Toast.LENGTH_LONG).show();
             }
         else {
             SharedPreferences.Editor editor = prefs.edit();

@@ -24,7 +24,12 @@
         android:id="@+id/menu_tethering"
         android:icon="@drawable/ic_signal_wifi_4_bar_white_24dp"
         android:title="@string/menu_tethering"
-        app:showAsAction="ifRoom" />
+        app:showAsAction="never" />
+    <item
+        android:id="@+id/menu_tethering_help"
+        android:title="@string/menu_tethering_help"
+        android:icon="@drawable/twotone_info_outline_24"
+        app:showAsAction="never" />
 
     <item
         android:id="@+id/menu_settings"

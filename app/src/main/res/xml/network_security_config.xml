@@ -1,11 +1,25 @@
+
 <?xml version="1.0" encoding="utf-8"?>
-<network-security-config xmlns:tools="http://schemas.android.com/tools"
-    tools:ignore="InsecureBaseConfiguration,AcceptsUserCertificates">
-    <!-- https://developer.android.com/training/articles/security-config -->
-    <base-config cleartextTrafficPermitted="true">
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="true">192.168.49.1</domain>
+        <domain includeSubdomains="true">localhost</domain>
+        <domain includeSubdomains="true">127.0.0.1</domain>
+    </domain-config>
+    
+    <!-- Allow self-signed certificates for tethering proxy -->
+    <base-config cleartextTrafficPermitted="false">
         <trust-anchors>
-            <certificates src="system" />
-            <certificates src="user" />
+            <certificates src="system"/>
+            <certificates src="user"/>
         </trust-anchors>
     </base-config>
+    
+    <!-- Debug configuration for development -->
+    <debug-overrides>
+        <trust-anchors>
+            <certificates src="system"/>
+            <certificates src="user"/>
+        </trust-anchors>
+    </debug-overrides>
 </network-security-config>
